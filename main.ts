@@ -13,51 +13,52 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	TAbstractFile,
 	TFile,
 	WorkspaceLeaf,
-	TAbstractFile,
 	type MarkdownFileInfo,
 } from "obsidian";
 
+import { allViewItems, allViewItemsByLink, appliedFiles, currentFile, maxDepth, pluginInstance, searchString, selectedTags, tagFolderSetting, tagInfo } from "store";
 import {
 	DEFAULT_SETTINGS,
+	enumShowListIn,
 	OrderDirection,
 	OrderKeyItem,
 	OrderKeyTag,
+	VIEW_TYPE_SCROLL,
+	VIEW_TYPE_TAGFOLDER,
+	VIEW_TYPE_TAGFOLDER_LINK,
+	VIEW_TYPE_TAGFOLDER_LIST,
+	type FileCache,
 	type ScrollViewFile,
 	type ScrollViewState,
 	type TagFolderListState,
 	type TagFolderSettings,
 	type TagInfoDict,
-	VIEW_TYPE_SCROLL,
-	VIEW_TYPE_TAGFOLDER,
-	VIEW_TYPE_TAGFOLDER_LIST,
-	type ViewItem,
-	VIEW_TYPE_TAGFOLDER_LINK,
-	type FileCache,
-	enumShowListIn
+	type ViewItem
 } from "types";
-import { allViewItems, allViewItemsByLink, appliedFiles, currentFile, maxDepth, pluginInstance, searchString, selectedTags, tagFolderSetting, tagInfo } from "store";
+import { ScrollView } from "./ScrollView";
+import { TagFolderList } from "./TagFolderList";
+import { TagFolderView } from "./TagFolderView";
 import {
+	ancestorToLongestTag,
+	ancestorToTags,
 	compare,
 	doEvents,
 	fileCacheToCompare,
+	isSpecialTag,
+	joinPartialPath,
 	parseAllReference,
+	removeIntermediatePath,
 	renderSpecialTag,
 	secondsToFreshness,
-	unique,
-	updateItemsLinkMap,
-	ancestorToLongestTag,
-	ancestorToTags,
-	joinPartialPath,
-	removeIntermediatePath,
+	trimPrefix,
+	trimSlash,
 	trimTrailingSlash,
-	isSpecialTag,
-	trimPrefix
+	unique,
+	updateItemsLinkMap
 } from "./util";
-import { ScrollView } from "./ScrollView";
-import { TagFolderView } from "./TagFolderView";
-import { TagFolderList } from "./TagFolderList";
 
 export type DISPLAY_METHOD = "PATH/NAME" | "NAME" | "NAME : PATH";
 
@@ -1175,8 +1176,31 @@ export default class TagFolderPlugin extends Plugin {
 			.join(" ")
 			.trim();
 
+		try {
+			if (this.settings.defaultNewFileDirectory) {
+				const _ = await this.app.vault.createFolder(this.settings.defaultNewFileDirectory);
+			}
+		} catch (error: any) {
+			console.log("path: " + this.settings.defaultNewFileDirectory + ": \\");
+			console.log(error);
+			console.log("^ This is normal and should in most cases happen.")
+			if (!error.toString().match(/^Error\: Folder already exists./)) {
+				new Notice(error.toString());
+			}
+		}
+
+		let defaultNewFileName = this.settings.defaultNewFileName;
+		if (!this.settings.defaultNewFileName) {
+			console.log("Filename should not be empty, using 'Untitled'")
+			defaultNewFileName = "Untitled";
+		}
+
 		//@ts-ignore
-		const ww = await this.app.fileManager.createAndOpenMarkdownFile() as TFile;
+		const ww = await this.app.fileManager.createAndOpenMarkdownFile(
+			trimTrailingSlash(this.settings.defaultNewFileDirectory) +
+			"/" +
+			trimSlash(defaultNewFileName)
+		) as TFile;
 		if (this.settings.useFrontmatterTagsForNewNotes) {
 			await this.app.fileManager.processFrontMatter(ww, (matter) => {
 				matter.tags = matter.tags ?? [];
@@ -1261,6 +1285,26 @@ class TagFolderSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.disableNarrowingDown)
 					.onChange(async (value) => {
 						this.plugin.settings.disableNarrowingDown = value;
+						await this.plugin.saveSettings();
+					});
+			});
+		new Setting(containerEl)
+			.setName("Default name for new files")
+			.addText((text) => {
+				text
+					.setValue(this.plugin.settings.defaultNewFileName)
+					.onChange(async (value) => {
+						this.plugin.settings.defaultNewFileName = value;
+						await this.plugin.saveSettings();
+					});
+			});
+		new Setting(containerEl)
+			.setName("Default directory for new files")
+			.addText((text) => {
+				text
+					.setValue(this.plugin.settings.defaultNewFileDirectory)
+					.onChange(async (value) => {
+						this.plugin.settings.defaultNewFileDirectory = value;
 						await this.plugin.saveSettings();
 					});
 			});
