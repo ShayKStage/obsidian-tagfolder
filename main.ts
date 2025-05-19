@@ -58,6 +58,9 @@ import {
 	trimTrailingSlash,
 	unique,
 	updateItemsLinkMap
+	isSpecialTag,
+	trimPrefix,
+	uniqueCaseIntensive
 } from "./util";
 
 export type DISPLAY_METHOD = "PATH/NAME" | "NAME" | "NAME : PATH";
@@ -73,7 +76,6 @@ const HideItemsType: Record<string, string> = {
 };
 
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function dotted<T extends Record<string, any>>(object: T, notation: string) {
 	return notation.split('.').reduce((a, b) => (a && (b in a)) ? a[b] : null, object);
 }
@@ -646,6 +648,10 @@ export default class TagFolderPlugin extends Plugin {
 					allTags.push(`${path.join("/")}`);
 				}
 			}
+
+			// Again for the additional tags.
+			allTags = uniqueCaseIntensive(allTags.map(e => e in tagRedirectList ? tagRedirectList[e] : e));
+
 			if (
 				allTags.some((tag) =>
 					ignoreDocTags.contains(tag.toLowerCase())
